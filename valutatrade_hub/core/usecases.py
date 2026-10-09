@@ -1,8 +1,13 @@
 from datetime import UTC, datetime
 
 from valutatrade_hub.core.currencies import get_currency
+from valutatrade_hub.core.exceptions import ApiRequestError
 from valutatrade_hub.core.models import Portfolio, User, Wallet
-from valutatrade_hub.core.utils import normalize_currency_code, validate_amount
+from valutatrade_hub.core.utils import (
+    normalize_currency_code,
+    parse_iso_datetime,
+    validate_amount,
+)
 from valutatrade_hub.decorators import log_action
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
@@ -214,12 +219,12 @@ class TradingService:
             portfolios,
         )
 
-    def get_rate(
+    def get_rate_info(
         self,
         from_code: str,
         to_code: str,
-    ) -> float:
-        """Возвращает курс одной валюты к другой."""
+    ) -> dict:
+        """Возвращает курс вместе с информацией об обновлении."""
         source = normalize_currency_code(from_code)
         target = normalize_currency_code(to_code)
 
@@ -227,9 +232,20 @@ class TradingService:
         get_currency(target)
 
         if source == target:
-            return 1.0
+            return {
+                "from": source,
+                "to": target,
+                "rate": 1.0,
+                "updated_at": None,
+                "source": "local",
+            }
 
         rates_file = self.settings.get("RATES_FILE")
+        ttl_seconds = self.settings.get(
+            "RATES_TTL_SECONDS",
+            300,
+        )
+
         rates_data = self.database.read_json(
             rates_file
         )
@@ -237,32 +253,116 @@ class TradingService:
         pairs = rates_data.get("pairs", {})
 
         direct_pair = f"{source}_{target}"
-
-        if direct_pair in pairs:
-            return float(
-                pairs[direct_pair]["rate"]
-            )
-
         reverse_pair = f"{target}_{source}"
 
-        if reverse_pair in pairs:
-            reverse_rate = float(
-                pairs[reverse_pair]["rate"]
+        if direct_pair in pairs:
+            pair_data = pairs[direct_pair]
+
+            rate = float(
+                pair_data["rate"]
             )
 
-            if reverse_rate == 0:
-                raise ValueError(
-                    f"Некорректный курс для {reverse_pair}"
+        elif reverse_pair in pairs:
+            pair_data = pairs[reverse_pair]
+
+            reverse_rate = float(
+                pair_data["rate"]
+            )
+
+            if reverse_rate <= 0:
+                raise ApiRequestError(
+                    f"некорректный курс для {reverse_pair}"
                 )
 
-            return 1 / reverse_rate
+            rate = 1 / reverse_rate
 
-        raise ValueError(
-            f"Не удалось получить курс для "
-            f"{source}->{target}"
+        else:
+            raise ApiRequestError(
+                f"курс {source}->{target} "
+                "отсутствует в кеше. "
+                "Выполните update-rates"
+            )
+
+        updated_at = pair_data.get(
+            "updated_at"
         )
 
-    @log_action("BUY")
+        if updated_at is None:
+            raise ApiRequestError(
+                f"для курса {source}->{target} "
+                "отсутствует время обновления"
+            )
+
+        updated_datetime = parse_iso_datetime(
+            updated_at
+        )
+
+        age_seconds = (
+            datetime.now(UTC)
+            - updated_datetime
+        ).total_seconds()
+
+        if age_seconds > ttl_seconds:
+            raise ApiRequestError(
+                f"курс {source}->{target} "
+                "устарел. Выполните update-rates"
+            )
+
+        return {
+            "from": source,
+            "to": target,
+            "rate": rate,
+            "updated_at": updated_at,
+            "source": pair_data.get(
+                "source",
+                "unknown",
+            ),
+        }
+
+    def get_rate(
+        self,
+        from_code: str,
+        to_code: str,
+    ) -> float:
+        """Возвращает только числовое значение курса."""
+        rate_info = self.get_rate_info(
+            from_code,
+            to_code,
+        )
+
+        return float(
+            rate_info["rate"]
+        )
+
+    def deposit_usd(
+        self,
+        amount: float,
+    ) -> dict:
+        """Пополняет виртуальный USD-кошелек."""
+        user = self._require_login()
+        amount = validate_amount(amount)
+
+        portfolio = self._load_portfolio(user)
+
+        usd_wallet = portfolio.get_wallet("USD")
+
+        if usd_wallet is None:
+            usd_wallet = portfolio.add_currency(
+                "USD"
+            )
+
+        old_balance = usd_wallet.balance
+        usd_wallet.deposit(amount)
+
+        self._save_portfolio(portfolio)
+
+        return {
+            "amount": amount,
+            "old_balance": old_balance,
+            "new_balance": usd_wallet.balance,
+        }
+
+    @log_action("BUY", verbose=True)
     def buy(
         self,
         currency_code: str,
@@ -274,6 +374,7 @@ class TradingService:
         code = normalize_currency_code(
             currency_code
         )
+
         amount = validate_amount(amount)
 
         get_currency(code)
@@ -305,7 +406,9 @@ class TradingService:
         )
 
         cost = amount * rate
+
         old_balance = target_wallet.balance
+        old_usd_balance = usd_wallet.balance
 
         usd_wallet.withdraw(cost)
         target_wallet.deposit(amount)
@@ -316,12 +419,15 @@ class TradingService:
             "currency": code,
             "amount": amount,
             "rate": rate,
+            "base": "USD",
             "cost": cost,
             "old_balance": old_balance,
             "new_balance": target_wallet.balance,
+            "old_usd_balance": old_usd_balance,
+            "new_usd_balance": usd_wallet.balance,
         }
 
-    @log_action("SELL")
+    @log_action("SELL", verbose=True)
     def sell(
         self,
         currency_code: str,
@@ -333,6 +439,7 @@ class TradingService:
         code = normalize_currency_code(
             currency_code
         )
+
         amount = validate_amount(amount)
 
         get_currency(code)
@@ -368,6 +475,8 @@ class TradingService:
                 "USD"
             )
 
+        old_usd_balance = usd_wallet.balance
+
         usd_wallet.deposit(revenue)
 
         self._save_portfolio(portfolio)
@@ -376,9 +485,12 @@ class TradingService:
             "currency": code,
             "amount": amount,
             "rate": rate,
+            "base": "USD",
             "revenue": revenue,
             "old_balance": old_balance,
             "new_balance": source_wallet.balance,
+            "old_usd_balance": old_usd_balance,
+            "new_usd_balance": usd_wallet.balance,
         }
 
     def show_portfolio(
@@ -404,11 +516,13 @@ class TradingService:
         ):
             if code == base:
                 value = wallet.balance
+
             else:
                 rate = self.get_rate(
                     code,
                     base,
                 )
+
                 value = wallet.balance * rate
 
             rows.append(

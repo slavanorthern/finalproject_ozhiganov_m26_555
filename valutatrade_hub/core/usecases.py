@@ -1,4 +1,7 @@
+"""Сценарии регистрации, торговли и оценки валютного портфеля."""
+
 from datetime import UTC, datetime
+from math import isfinite
 
 from valutatrade_hub.core.currencies import get_currency
 from valutatrade_hub.core.exceptions import ApiRequestError
@@ -14,7 +17,7 @@ from valutatrade_hub.infra.settings import SettingsLoader
 
 
 class TradingService:
-    """Основная бизнес-логика приложения."""
+    """Управляет пользователями, портфелями и торговыми операциями."""
 
     def __init__(self) -> None:
         self.settings = SettingsLoader()
@@ -22,37 +25,63 @@ class TradingService:
         self.current_user: User | None = None
 
     @log_action("REGISTER")
-    def register(self, username: str, password: str) -> User:
-        """Регистрирует нового пользователя."""
+    def register(
+        self,
+        username: str,
+        password: str,
+    ) -> User:
+        """Создает пользователя и пустой портфель."""
         if not isinstance(username, str) or not username.strip():
-            raise ValueError("Имя пользователя не может быть пустым")
+            raise ValueError(
+                "Имя пользователя не может быть пустым"
+            )
 
         if not isinstance(password, str) or len(password) < 4:
-            raise ValueError("Пароль должен быть не короче 4 символов")
+            raise ValueError(
+                "Пароль должен быть не короче 4 символов"
+            )
 
         username = username.strip()
 
-        users_file = self.settings.get("USERS_FILE")
-        portfolios_file = self.settings.get("PORTFOLIOS_FILE")
+        users_file = self.settings.get(
+            "USERS_FILE"
+        )
 
-        users = self.database.read_json(users_file)
+        portfolios_file = self.settings.get(
+            "PORTFOLIOS_FILE"
+        )
 
-        if any(user["username"] == username for user in users):
+        users = self.database.read_json(
+            users_file
+        )
+
+        if any(
+            item["username"] == username
+            for item in users
+        ):
             raise ValueError(
                 f"Имя пользователя '{username}' уже занято"
             )
 
-        user_id = max(
-            (user["user_id"] for user in users),
-            default=0,
-        ) + 1
+        user_id = (
+            max(
+                (
+                    item["user_id"]
+                    for item in users
+                ),
+                default=0,
+            )
+            + 1
+        )
 
         user = User(
             user_id=user_id,
             username=username,
             hashed_password="",
             salt="",
-            registration_date=datetime.now(UTC),
+            registration_date=datetime.now(
+                UTC
+            ),
         )
 
         user.change_password(password)
@@ -98,15 +127,27 @@ class TradingService:
         username: str,
         password: str,
     ) -> User:
-        """Выполняет вход пользователя."""
-        users_file = self.settings.get("USERS_FILE")
-        users = self.database.read_json(users_file)
+        """Проверяет пароль и создает текущую сессию."""
+        users_file = self.settings.get(
+            "USERS_FILE"
+        )
+
+        users = self.database.read_json(
+            users_file
+        )
+
+        if not isinstance(username, str):
+            raise ValueError(
+                "Имя пользователя должно быть строкой"
+            )
+
+        username = username.strip()
 
         user_data = next(
             (
-                user
-                for user in users
-                if user["username"] == username
+                item
+                for item in users
+                if item["username"] == username
             ),
             None,
         )
@@ -119,7 +160,9 @@ class TradingService:
         user = User(
             user_id=user_data["user_id"],
             username=user_data["username"],
-            hashed_password=user_data["hashed_password"],
+            hashed_password=user_data[
+                "hashed_password"
+            ],
             salt=user_data["salt"],
             registration_date=datetime.fromisoformat(
                 user_data["registration_date"]
@@ -127,16 +170,20 @@ class TradingService:
         )
 
         if not user.verify_password(password):
-            raise ValueError("Неверный пароль")
+            raise ValueError(
+                "Неверный пароль"
+            )
 
         self.current_user = user
 
         return user
 
     def _require_login(self) -> User:
-        """Проверяет наличие активной сессии."""
+        """Возвращает текущего пользователя."""
         if self.current_user is None:
-            raise ValueError("Сначала выполните login")
+            raise ValueError(
+                "Сначала выполните login"
+            )
 
         return self.current_user
 
@@ -144,7 +191,7 @@ class TradingService:
         self,
         user: User,
     ) -> Portfolio:
-        """Загружает портфель пользователя из JSON."""
+        """Загружает пользовательский портфель."""
         portfolios_file = self.settings.get(
             "PORTFOLIOS_FILE"
         )
@@ -155,9 +202,9 @@ class TradingService:
 
         portfolio_data = next(
             (
-                portfolio
-                for portfolio in portfolios
-                if portfolio["user_id"] == user.user_id
+                item
+                for item in portfolios
+                if item["user_id"] == user.user_id
             ),
             None,
         )
@@ -170,7 +217,9 @@ class TradingService:
             ):
                 wallets[code] = Wallet(
                     currency_code=code,
-                    balance=wallet_data["balance"],
+                    balance=wallet_data[
+                        "balance"
+                    ],
                 )
 
         return Portfolio(
@@ -182,7 +231,7 @@ class TradingService:
         self,
         portfolio: Portfolio,
     ) -> None:
-        """Сохраняет портфель пользователя в JSON."""
+        """Сохраняет пользовательский портфель."""
         portfolios_file = self.settings.get(
             "PORTFOLIOS_FILE"
         )
@@ -195,21 +244,23 @@ class TradingService:
             code: {
                 "balance": wallet.balance,
             }
-            for code, wallet in portfolio.wallets.items()
+            for code, wallet
+            in portfolio.wallets.items()
         }
 
-        updated = False
-
         for item in portfolios:
-            if item["user_id"] == portfolio.user.user_id:
+            if (
+                item["user_id"]
+                == portfolio.user.user_id
+            ):
                 item["wallets"] = wallets_data
-                updated = True
                 break
-
-        if not updated:
+        else:
             portfolios.append(
                 {
-                    "user_id": portfolio.user.user_id,
+                    "user_id": (
+                        portfolio.user.user_id
+                    ),
                     "wallets": wallets_data,
                 }
             )
@@ -219,14 +270,156 @@ class TradingService:
             portfolios,
         )
 
+    @staticmethod
+    def _get_cached_quote(
+        from_code: str,
+        to_code: str,
+        pairs: dict,
+        ttl_seconds: int,
+    ) -> dict | None:
+        """Возвращает прямой или обратный курс из кеша."""
+        if from_code == to_code:
+            return {
+                "rate": 1.0,
+                "updated_at": None,
+                "source": "local",
+            }
+
+        direct_pair = (
+            f"{from_code}_{to_code}"
+        )
+
+        reverse_pair = (
+            f"{to_code}_{from_code}"
+        )
+
+        is_reverse = False
+
+        if direct_pair in pairs:
+            pair_name = direct_pair
+
+        elif reverse_pair in pairs:
+            pair_name = reverse_pair
+            is_reverse = True
+
+        else:
+            return None
+
+        pair_data = pairs[pair_name]
+
+        try:
+            rate = float(
+                pair_data["rate"]
+            )
+
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+            OverflowError,
+        ) as error:
+            raise ApiRequestError(
+                f"некорректный курс "
+                f"{pair_name}"
+            ) from error
+
+        if not isfinite(rate) or rate <= 0:
+            raise ApiRequestError(
+                f"некорректный курс "
+                f"{pair_name}"
+            )
+
+        if is_reverse:
+            rate = 1 / rate
+
+        if not isfinite(rate) or rate <= 0:
+            raise ApiRequestError(
+                f"некорректный обратный курс "
+                f"{pair_name}"
+            )
+
+        updated_at = pair_data.get(
+            "updated_at"
+        )
+
+        if (
+            not isinstance(
+                updated_at,
+                str,
+            )
+            or not updated_at
+        ):
+            raise ApiRequestError(
+                f"для курса {pair_name} "
+                "отсутствует время обновления"
+            )
+
+        try:
+            updated_datetime = (
+                parse_iso_datetime(
+                    updated_at
+                )
+            )
+
+            if (
+                updated_datetime.tzinfo
+                is None
+            ):
+                updated_datetime = (
+                    updated_datetime.replace(
+                        tzinfo=UTC
+                    )
+                )
+
+        except (
+            TypeError,
+            ValueError,
+        ) as error:
+            raise ApiRequestError(
+                f"некорректное время "
+                f"обновления {pair_name}"
+            ) from error
+
+        age_seconds = (
+            datetime.now(UTC)
+            - updated_datetime
+        ).total_seconds()
+
+        if age_seconds > ttl_seconds:
+            raise ApiRequestError(
+                f"курс {pair_name} устарел. "
+                "Выполните update-rates"
+            )
+
+        return {
+            "rate": rate,
+            "updated_at": (
+                updated_datetime.isoformat()
+            ),
+            "source": pair_data.get(
+                "source",
+                "unknown",
+            ),
+        }
+
     def get_rate_info(
         self,
         from_code: str,
         to_code: str,
     ) -> dict:
-        """Возвращает курс вместе с информацией об обновлении."""
-        source = normalize_currency_code(from_code)
-        target = normalize_currency_code(to_code)
+        """
+        Возвращает курс и метаданные.
+
+        Если прямой пары нет, рассчитывает
+        кросс-курс через USD.
+        """
+        source = normalize_currency_code(
+            from_code
+        )
+
+        target = normalize_currency_code(
+            to_code
+        )
 
         get_currency(source)
         get_currency(target)
@@ -240,7 +433,10 @@ class TradingService:
                 "source": "local",
             }
 
-        rates_file = self.settings.get("RATES_FILE")
+        rates_file = self.settings.get(
+            "RATES_FILE"
+        )
+
         ttl_seconds = self.settings.get(
             "RATES_TTL_SECONDS",
             300,
@@ -250,73 +446,105 @@ class TradingService:
             rates_file
         )
 
-        pairs = rates_data.get("pairs", {})
+        pairs = rates_data.get(
+            "pairs",
+            {},
+        )
 
-        direct_pair = f"{source}_{target}"
-        reverse_pair = f"{target}_{source}"
+        quote = self._get_cached_quote(
+            source,
+            target,
+            pairs,
+            ttl_seconds,
+        )
 
-        if direct_pair in pairs:
-            pair_data = pairs[direct_pair]
-
-            rate = float(
-                pair_data["rate"]
+        if quote is None:
+            source_quote = (
+                self._get_cached_quote(
+                    source,
+                    "USD",
+                    pairs,
+                    ttl_seconds,
+                )
             )
 
-        elif reverse_pair in pairs:
-            pair_data = pairs[reverse_pair]
-
-            reverse_rate = float(
-                pair_data["rate"]
+            target_quote = (
+                self._get_cached_quote(
+                    target,
+                    "USD",
+                    pairs,
+                    ttl_seconds,
+                )
             )
 
-            if reverse_rate <= 0:
+            if (
+                source_quote is None
+                or target_quote is None
+            ):
                 raise ApiRequestError(
-                    f"некорректный курс для {reverse_pair}"
+                    f"курс {source}->{target} "
+                    "недоступен. "
+                    "Выполните update-rates"
                 )
 
-            rate = 1 / reverse_rate
-
-        else:
-            raise ApiRequestError(
-                f"курс {source}->{target} "
-                "отсутствует в кеше. "
-                "Выполните update-rates"
+            rate = (
+                source_quote["rate"]
+                / target_quote["rate"]
             )
 
-        updated_at = pair_data.get(
-            "updated_at"
-        )
+            if (
+                not isfinite(rate)
+                or rate <= 0
+            ):
+                raise ApiRequestError(
+                    f"некорректный расчет "
+                    f"курса "
+                    f"{source}->{target}"
+                )
 
-        if updated_at is None:
-            raise ApiRequestError(
-                f"для курса {source}->{target} "
-                "отсутствует время обновления"
+            timestamps = [
+                item["updated_at"]
+                for item in (
+                    source_quote,
+                    target_quote,
+                )
+                if item["updated_at"]
+                is not None
+            ]
+
+            if timestamps:
+                updated_at = min(
+                    timestamps,
+                    key=parse_iso_datetime,
+                )
+            else:
+                updated_at = None
+
+            sources = list(
+                dict.fromkeys(
+                    item["source"]
+                    for item in (
+                        source_quote,
+                        target_quote,
+                    )
+                    if item["source"]
+                    != "local"
+                )
             )
 
-        updated_datetime = parse_iso_datetime(
-            updated_at
-        )
-
-        age_seconds = (
-            datetime.now(UTC)
-            - updated_datetime
-        ).total_seconds()
-
-        if age_seconds > ttl_seconds:
-            raise ApiRequestError(
-                f"курс {source}->{target} "
-                "устарел. Выполните update-rates"
-            )
+            quote = {
+                "rate": rate,
+                "updated_at": updated_at,
+                "source": (
+                    " / ".join(sources)
+                    or "local"
+                ),
+            }
 
         return {
             "from": source,
             "to": target,
-            "rate": rate,
-            "updated_at": updated_at,
-            "source": pair_data.get(
-                "source",
-                "unknown",
-            ),
+            **quote,
         }
 
     def get_rate(
@@ -340,21 +568,35 @@ class TradingService:
     ) -> dict:
         """Пополняет виртуальный USD-кошелек."""
         user = self._require_login()
-        amount = validate_amount(amount)
 
-        portfolio = self._load_portfolio(user)
+        amount = validate_amount(
+            amount
+        )
 
-        usd_wallet = portfolio.get_wallet("USD")
+        portfolio = self._load_portfolio(
+            user
+        )
+
+        usd_wallet = portfolio.get_wallet(
+            "USD"
+        )
 
         if usd_wallet is None:
-            usd_wallet = portfolio.add_currency(
-                "USD"
+            usd_wallet = (
+                portfolio.add_currency(
+                    "USD"
+                )
             )
 
         old_balance = usd_wallet.balance
-        usd_wallet.deposit(amount)
 
-        self._save_portfolio(portfolio)
+        usd_wallet.deposit(
+            amount
+        )
+
+        self._save_portfolio(
+            portfolio
+        )
 
         return {
             "amount": amount,
@@ -362,7 +604,10 @@ class TradingService:
             "new_balance": usd_wallet.balance,
         }
 
-    @log_action("BUY", verbose=True)
+    @log_action(
+        "BUY",
+        verbose=True,
+    )
     def buy(
         self,
         currency_code: str,
@@ -375,7 +620,9 @@ class TradingService:
             currency_code
         )
 
-        amount = validate_amount(amount)
+        amount = validate_amount(
+            amount
+        )
 
         get_currency(code)
 
@@ -384,20 +631,32 @@ class TradingService:
                 "Нельзя купить USD за USD"
             )
 
-        portfolio = self._load_portfolio(user)
+        portfolio = self._load_portfolio(
+            user
+        )
 
-        usd_wallet = portfolio.get_wallet("USD")
+        usd_wallet = portfolio.get_wallet(
+            "USD"
+        )
 
         if usd_wallet is None:
-            usd_wallet = portfolio.add_currency(
-                "USD"
+            usd_wallet = (
+                portfolio.add_currency(
+                    "USD"
+                )
             )
 
-        target_wallet = portfolio.get_wallet(code)
+        target_wallet = (
+            portfolio.get_wallet(
+                code
+            )
+        )
 
         if target_wallet is None:
-            target_wallet = portfolio.add_currency(
-                code
+            target_wallet = (
+                portfolio.add_currency(
+                    code
+                )
             )
 
         rate = self.get_rate(
@@ -407,13 +666,33 @@ class TradingService:
 
         cost = amount * rate
 
-        old_balance = target_wallet.balance
-        old_usd_balance = usd_wallet.balance
+        if (
+            not isfinite(cost)
+            or cost <= 0
+        ):
+            raise ValueError(
+                "Некорректная стоимость покупки"
+            )
 
-        usd_wallet.withdraw(cost)
-        target_wallet.deposit(amount)
+        old_balance = (
+            target_wallet.balance
+        )
 
-        self._save_portfolio(portfolio)
+        old_usd_balance = (
+            usd_wallet.balance
+        )
+
+        usd_wallet.withdraw(
+            cost
+        )
+
+        target_wallet.deposit(
+            amount
+        )
+
+        self._save_portfolio(
+            portfolio
+        )
 
         return {
             "currency": code,
@@ -422,25 +701,36 @@ class TradingService:
             "base": "USD",
             "cost": cost,
             "old_balance": old_balance,
-            "new_balance": target_wallet.balance,
-            "old_usd_balance": old_usd_balance,
-            "new_usd_balance": usd_wallet.balance,
+            "new_balance": (
+                target_wallet.balance
+            ),
+            "old_usd_balance": (
+                old_usd_balance
+            ),
+            "new_usd_balance": (
+                usd_wallet.balance
+            ),
         }
 
-    @log_action("SELL", verbose=True)
+    @log_action(
+        "SELL",
+        verbose=True,
+    )
     def sell(
         self,
         currency_code: str,
         amount: float,
     ) -> dict:
-        """Продает валюту и начисляет выручку в USD."""
+        """Продает валюту и зачисляет выручку в USD."""
         user = self._require_login()
 
         code = normalize_currency_code(
             currency_code
         )
 
-        amount = validate_amount(amount)
+        amount = validate_amount(
+            amount
+        )
 
         get_currency(code)
 
@@ -449,13 +739,23 @@ class TradingService:
                 "Нельзя продать USD за USD"
             )
 
-        portfolio = self._load_portfolio(user)
+        portfolio = self._load_portfolio(
+            user
+        )
 
-        source_wallet = portfolio.get_wallet(code)
+        source_wallet = (
+            portfolio.get_wallet(
+                code
+            )
+        )
 
         if source_wallet is None:
             raise ValueError(
-                f"У вас нет кошелька '{code}'"
+                f"У вас нет кошелька "
+                f"'{code}'. "
+                "Добавьте валюту: "
+                "она создается автоматически "
+                "при первой покупке."
             )
 
         rate = self.get_rate(
@@ -464,22 +764,45 @@ class TradingService:
         )
 
         revenue = amount * rate
-        old_balance = source_wallet.balance
 
-        source_wallet.withdraw(amount)
-
-        usd_wallet = portfolio.get_wallet("USD")
-
-        if usd_wallet is None:
-            usd_wallet = portfolio.add_currency(
-                "USD"
+        if (
+            not isfinite(revenue)
+            or revenue <= 0
+        ):
+            raise ValueError(
+                "Некорректная сумма выручки"
             )
 
-        old_usd_balance = usd_wallet.balance
+        old_balance = (
+            source_wallet.balance
+        )
 
-        usd_wallet.deposit(revenue)
+        source_wallet.withdraw(
+            amount
+        )
 
-        self._save_portfolio(portfolio)
+        usd_wallet = portfolio.get_wallet(
+            "USD"
+        )
+
+        if usd_wallet is None:
+            usd_wallet = (
+                portfolio.add_currency(
+                    "USD"
+                )
+            )
+
+        old_usd_balance = (
+            usd_wallet.balance
+        )
+
+        usd_wallet.deposit(
+            revenue
+        )
+
+        self._save_portfolio(
+            portfolio
+        )
 
         return {
             "currency": code,
@@ -488,16 +811,22 @@ class TradingService:
             "base": "USD",
             "revenue": revenue,
             "old_balance": old_balance,
-            "new_balance": source_wallet.balance,
-            "old_usd_balance": old_usd_balance,
-            "new_usd_balance": usd_wallet.balance,
+            "new_balance": (
+                source_wallet.balance
+            ),
+            "old_usd_balance": (
+                old_usd_balance
+            ),
+            "new_usd_balance": (
+                usd_wallet.balance
+            ),
         }
 
     def show_portfolio(
         self,
         base_currency: str = "USD",
     ) -> dict:
-        """Возвращает портфель пользователя и его стоимость."""
+        """Возвращает портфель и стоимость в базовой валюте."""
         user = self._require_login()
 
         base = normalize_currency_code(
@@ -506,14 +835,17 @@ class TradingService:
 
         get_currency(base)
 
-        portfolio = self._load_portfolio(user)
+        portfolio = self._load_portfolio(
+            user
+        )
 
         rows = []
         total = 0.0
 
-        for code, wallet in (
-            portfolio.wallets.items()
-        ):
+        for (
+            code,
+            wallet,
+        ) in portfolio.wallets.items():
             if code == base:
                 value = wallet.balance
 
@@ -523,17 +855,40 @@ class TradingService:
                     base,
                 )
 
-                value = wallet.balance * rate
+                value = (
+                    wallet.balance
+                    * rate
+                )
+
+            if (
+                not isfinite(value)
+                or value < 0
+            ):
+                raise ValueError(
+                    f"Некорректная стоимость "
+                    f"кошелька {code}"
+                )
 
             rows.append(
                 {
                     "currency": code,
-                    "balance": wallet.balance,
+                    "balance": (
+                        wallet.balance
+                    ),
                     "value": value,
                 }
             )
 
             total += value
+
+        if (
+            not isfinite(total)
+            or total < 0
+        ):
+            raise ValueError(
+                "Некорректная итоговая "
+                "стоимость портфеля"
+            )
 
         return {
             "username": user.username,

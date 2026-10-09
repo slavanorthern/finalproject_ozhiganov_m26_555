@@ -1,24 +1,33 @@
+"""Конфигурация Parser Service."""
+
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(
+    __file__
+).resolve().parents[2]
 
-load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(
+    PROJECT_ROOT / ".env"
+)
 
 
 @dataclass(frozen=True)
 class ParserConfig:
-    """Конфигурация Parser Service."""
+    """Настройки API и хранения валютных курсов."""
 
     exchangerate_api_key: str | None = field(
-        default_factory=lambda: os.getenv("EXCHANGERATE_API_KEY")
+        default_factory=lambda: os.getenv(
+            "EXCHANGERATE_API_KEY"
+        )
     )
 
     coingecko_url: str = (
-        "https://api.coingecko.com/api/v3/simple/price"
+        "https://api.coingecko.com/"
+        "api/v3/simple/price"
     )
 
     exchangerate_api_url: str = (
@@ -49,16 +58,22 @@ class ParserConfig:
 
     request_timeout: int = 10
 
-    project_root: Path = field(
-        default_factory=lambda: PROJECT_ROOT
-    )
+    project_root: Path = PROJECT_ROOT
 
     @property
     def rates_file_path(self) -> Path:
-        """Путь к текущему кешу курсов."""
-        return self.project_root / "data" / "rates.json"
+        """Возвращает путь к кешу актуальных курсов."""
+        return (
+            self.project_root
+            / "data"
+            / "rates.json"
+        )
 
     @property
     def history_file_path(self) -> Path:
-        """Путь к истории курсов."""
-        return self.project_root / "data" / "exchange_rates.json"
+        """Возвращает путь к истории курсов."""
+        return (
+            self.project_root
+            / "data"
+            / "exchange_rates.json"
+        )

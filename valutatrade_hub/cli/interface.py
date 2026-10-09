@@ -1,3 +1,5 @@
+"""Консольный интерфейс приложения ValutaTrade Hub."""
+
 import shlex
 
 from prettytable import PrettyTable
@@ -18,13 +20,16 @@ from valutatrade_hub.parser_service.api_clients import (
     ExchangeRateApiClient,
 )
 from valutatrade_hub.parser_service.config import ParserConfig
+from valutatrade_hub.parser_service.scheduler import run_scheduler
 from valutatrade_hub.parser_service.storage import RatesStorage
 from valutatrade_hub.parser_service.updater import RatesUpdater
 
 
-def parse_options(tokens: list[str]) -> dict[str, str]:
+def parse_options(
+    tokens: list[str],
+) -> dict[str, str]:
     """Преобразует аргументы вида --key value в словарь."""
-    options = {}
+    options: dict[str, str] = {}
     index = 0
 
     while index < len(tokens):
@@ -37,12 +42,24 @@ def parse_options(tokens: list[str]) -> dict[str, str]:
 
         key = token[2:]
 
+        if not key:
+            raise ValueError(
+                "Некорректное имя аргумента"
+            )
+
         if index + 1 >= len(tokens):
             raise ValueError(
                 f"Не указано значение для --{key}"
             )
 
-        options[key] = tokens[index + 1]
+        value = tokens[index + 1]
+
+        if value.startswith("--"):
+            raise ValueError(
+                f"Не указано значение для --{key}"
+            )
+
+        options[key] = value
         index += 2
 
     return options
@@ -52,7 +69,7 @@ def require_option(
     options: dict[str, str],
     name: str,
 ) -> str:
-    """Возвращает обязательный аргумент."""
+    """Возвращает обязательный аргумент CLI."""
     value = options.get(name)
 
     if value is None:
@@ -64,7 +81,7 @@ def require_option(
 
 
 def print_help() -> None:
-    """Показывает список команд."""
+    """Показывает список доступных команд."""
     print(
         """
 Доступные команды:
@@ -81,6 +98,7 @@ sell --currency <code> --amount <amount>
 get-rate --from <code> --to <code>
 
 update-rates [--source coingecko|exchangerate]
+schedule-rates [--interval 300] [--source coingecko|exchangerate]
 
 show-rates [--base USD] [--currency BTC] [--top 2]
 
@@ -94,7 +112,7 @@ def handle_register(
     service: TradingService,
     options: dict[str, str],
 ) -> None:
-    """Обрабатывает register."""
+    """Обрабатывает команду register."""
     username = require_option(
         options,
         "username",
@@ -125,7 +143,7 @@ def handle_login(
     service: TradingService,
     options: dict[str, str],
 ) -> None:
-    """Обрабатывает login."""
+    """Обрабатывает команду login."""
     username = require_option(
         options,
         "username",
@@ -150,13 +168,15 @@ def handle_show_portfolio(
     service: TradingService,
     options: dict[str, str],
 ) -> None:
-    """Обрабатывает show-portfolio."""
+    """Показывает портфель пользователя."""
     base = options.get(
         "base",
         "USD",
     )
 
-    result = service.show_portfolio(base)
+    result = service.show_portfolio(
+        base
+    )
 
     print(
         f"Портфель пользователя "
@@ -165,7 +185,9 @@ def handle_show_portfolio(
     )
 
     if not result["wallets"]:
-        print("Портфель пуст")
+        print(
+            "Портфель пуст"
+        )
         return
 
     table = PrettyTable()
@@ -185,10 +207,13 @@ def handle_show_portfolio(
             ]
         )
 
-    print(table)
+    print(
+        table
+    )
 
     print(
-        f"ИТОГО: {result['total']:.2f} "
+        f"ИТОГО: "
+        f"{result['total']:.2f} "
         f"{result['base_currency']}"
     )
 
@@ -205,7 +230,9 @@ def handle_deposit(
         )
     )
 
-    result = service.deposit_usd(amount)
+    result = service.deposit_usd(
+        amount
+    )
 
     print(
         f"USD-баланс пополнен на "
@@ -223,7 +250,7 @@ def handle_buy(
     service: TradingService,
     options: dict[str, str],
 ) -> None:
-    """Обрабатывает buy."""
+    """Обрабатывает покупку валюты."""
     currency = require_option(
         options,
         "currency",
@@ -275,7 +302,7 @@ def handle_sell(
     service: TradingService,
     options: dict[str, str],
 ) -> None:
-    """Обрабатывает sell."""
+    """Обрабатывает продажу валюты."""
     currency = require_option(
         options,
         "currency",
@@ -327,7 +354,7 @@ def handle_get_rate(
     service: TradingService,
     options: dict[str, str],
 ) -> None:
-    """Обрабатывает get-rate."""
+    """Показывает текущий курс валют."""
     from_code = require_option(
         options,
         "from",
@@ -374,12 +401,16 @@ def handle_get_rate(
 
 
 def build_rates_updater() -> RatesUpdater:
-    """Создает Parser Service."""
+    """Создает Parser Service и его зависимости."""
     config = ParserConfig()
 
     clients = [
-        CoinGeckoClient(config),
-        ExchangeRateApiClient(config),
+        CoinGeckoClient(
+            config
+        ),
+        ExchangeRateApiClient(
+            config
+        ),
     ]
 
     storage = RatesStorage()
@@ -394,7 +425,7 @@ def build_rates_updater() -> RatesUpdater:
 def handle_update_rates(
     options: dict[str, str],
 ) -> None:
-    """Обрабатывает update-rates."""
+    """Запускает ручное обновление курсов."""
     source = options.get(
         "source"
     )
@@ -405,9 +436,15 @@ def handle_update_rates(
         source=source,
     )
 
-    print(
-        "Обновление курсов завершено."
-    )
+    if result["errors"]:
+        print(
+            "Обновление завершено "
+            "с отдельными ошибками."
+        )
+    else:
+        print(
+            "Обновление курсов завершено."
+        )
 
     print(
         f"Обновлено курсов: "
@@ -421,11 +458,73 @@ def handle_update_rates(
 
     if result["errors"]:
         print(
-            "Обновление завершено с ошибками:"
+            "Ошибки:"
         )
 
         for error in result["errors"]:
-            print(f"- {error}")
+            print(
+                f"- {error}"
+            )
+
+
+def handle_schedule_rates(
+    options: dict[str, str],
+) -> None:
+    """Запускает периодическое обновление курсов."""
+    interval_text = options.get(
+        "interval",
+        "300",
+    )
+
+    try:
+        interval = int(
+            interval_text
+        )
+
+    except ValueError as error:
+        raise ValueError(
+            "'interval' должен быть "
+            "целым числом секунд"
+        ) from error
+
+    if interval <= 0:
+        raise ValueError(
+            "'interval' должен быть "
+            "положительным числом"
+        )
+
+    source = options.get(
+        "source"
+    )
+
+    updater = build_rates_updater()
+
+    print(
+        "Планировщик запущен."
+    )
+
+    print(
+        f"Интервал: {interval} сек."
+    )
+
+    if source:
+        print(
+            f"Источник: {source}"
+        )
+    else:
+        print(
+            "Источники: все"
+        )
+
+    print(
+        "Для остановки нажмите Ctrl+C."
+    )
+
+    run_scheduler(
+        updater=updater,
+        interval_seconds=interval,
+        source=source,
+    )
 
 
 def get_cached_usd_rate(
@@ -436,24 +535,38 @@ def get_cached_usd_rate(
     code = currency_code.upper()
 
     if code == "USD":
-        return 1.0, {
-            "updated_at": None,
-            "source": "local",
-        }
+        return (
+            1.0,
+            {
+                "updated_at": None,
+                "source": "local",
+            },
+        )
 
-    direct_pair = f"{code}_USD"
-    reverse_pair = f"USD_{code}"
+    direct_pair = (
+        f"{code}_USD"
+    )
+
+    reverse_pair = (
+        f"USD_{code}"
+    )
 
     if direct_pair in pairs:
-        item = pairs[direct_pair]
+        item = pairs[
+            direct_pair
+        ]
 
         return (
-            float(item["rate"]),
+            float(
+                item["rate"]
+            ),
             item,
         )
 
     if reverse_pair in pairs:
-        item = pairs[reverse_pair]
+        item = pairs[
+            reverse_pair
+        ]
 
         reverse_rate = float(
             item["rate"]
@@ -508,7 +621,9 @@ def handle_show_rates(
         "USD",
     ).upper()
 
-    get_currency(base)
+    get_currency(
+        base
+    )
 
     currency_filter = options.get(
         "currency"
@@ -530,7 +645,9 @@ def handle_show_rates(
         )
     )
 
-    currencies = {"USD"}
+    currencies = {
+        "USD"
+    }
 
     for pair in pairs:
         from_code, to_code = pair.split(
@@ -548,13 +665,16 @@ def handle_show_rates(
 
     rows = []
 
-    for currency in sorted(currencies):
+    for currency in sorted(
+        currencies
+    ):
         if currency == base:
             continue
 
         if (
             currency_filter
-            and currency != currency_filter
+            and currency
+            != currency_filter
         ):
             continue
 
@@ -581,39 +701,44 @@ def handle_show_rates(
         )
 
         rows.append(
-            (
-                f"{currency}_{base}",
-                rate,
-                info_item.get(
-                    "updated_at"
-                )
-                or data.get(
-                    "last_refresh"
+            {
+                "currency": currency,
+                "pair": (
+                    f"{currency}_{base}"
                 ),
-                info_item.get(
-                    "source",
-                    "calculated",
+                "rate": rate,
+                "updated_at": (
+                    info_item.get(
+                        "updated_at"
+                    )
+                    or data.get(
+                        "last_refresh"
+                    )
                 ),
-            )
+                "source": (
+                    info_item.get(
+                        "source",
+                        "calculated",
+                    )
+                ),
+            }
         )
-
-    if currency_filter and not rows:
-        print(
-            f"Курс для "
-            f"'{currency_filter}' "
-            f"в базе '{base}' "
-            "не найден."
-        )
-        return
 
     top = options.get(
         "top"
     )
 
     if top is not None:
-        top_count = int(
-            top
-        )
+        try:
+            top_count = int(
+                top
+            )
+
+        except ValueError as error:
+            raise ValueError(
+                "'top' должен быть "
+                "целым числом"
+            ) from error
 
         if top_count <= 0:
             raise ValueError(
@@ -621,8 +746,19 @@ def handle_show_rates(
                 "положительным числом"
             )
 
+        crypto_codes = set(
+            config.crypto_currencies
+        )
+
+        rows = [
+            row
+            for row in rows
+            if row["currency"]
+            in crypto_codes
+        ]
+
         rows.sort(
-            key=lambda item: item[1],
+            key=lambda row: row["rate"],
             reverse=True,
         )
 
@@ -632,8 +768,31 @@ def handle_show_rates(
 
     else:
         rows.sort(
-            key=lambda item: item[0]
+            key=lambda row: row["pair"]
         )
+
+    if not rows:
+        if currency_filter:
+            print(
+                f"Курс для "
+                f"'{currency_filter}' "
+                f"в базе '{base}' "
+                "не найден."
+            )
+
+        elif top is not None:
+            print(
+                "Криптовалютные курсы "
+                "не найдены в кеше."
+            )
+
+        else:
+            print(
+                "Подходящие курсы "
+                "не найдены."
+            )
+
+        return
 
     print(
         "Rates from cache "
@@ -651,22 +810,19 @@ def handle_show_rates(
         "Источник",
     ]
 
-    for (
-        pair,
-        rate,
-        updated_at,
-        source,
-    ) in rows:
+    for row in rows:
         table.add_row(
             [
-                pair,
-                f"{rate:.8f}",
-                updated_at,
-                source,
+                row["pair"],
+                f"{row['rate']:.8f}",
+                row["updated_at"],
+                row["source"],
             ]
         )
 
-    print(table)
+    print(
+        table
+    )
 
 
 def execute_command(
@@ -736,6 +892,11 @@ def execute_command(
             options,
         )
 
+    elif command == "schedule-rates":
+        handle_schedule_rates(
+            options,
+        )
+
     elif command == "show-rates":
         handle_show_rates(
             options,
@@ -790,7 +951,9 @@ def main() -> None:
                 break
 
         except CurrencyNotFoundError as error:
-            print(error)
+            print(
+                error
+            )
 
             print(
                 "Поддерживаемые валюты: "
@@ -800,16 +963,27 @@ def main() -> None:
             )
 
         except InsufficientFundsError as error:
-            print(error)
+            print(
+                error
+            )
 
         except ApiRequestError as error:
-            print(error)
+            print(
+                error
+            )
+
+            print(
+                "Повторите попытку позже "
+                "или выполните update-rates."
+            )
 
         except (
             ValueError,
             TypeError,
         ) as error:
-            print(error)
+            print(
+                error
+            )
 
         except KeyboardInterrupt:
             print(

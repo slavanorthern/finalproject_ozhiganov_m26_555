@@ -14,30 +14,17 @@ class Currency(ABC):
         name: str,
         code: str,
     ) -> None:
-        if (
-            not isinstance(name, str)
-            or not name.strip()
-        ):
-            raise ValueError(
-                "Название валюты не может быть пустым"
-            )
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Название валюты не может быть пустым")
 
         if not isinstance(code, str):
-            raise ValueError(
-                "Код валюты должен быть строкой"
-            )
+            raise ValueError("Код валюты должен быть строкой")
 
-        normalized_code = (
-            code.strip().upper()
-        )
+        normalized_code = code.strip().upper()
 
-        if (
-            not 2 <= len(normalized_code) <= 5
-            or " " in normalized_code
-        ):
+        if not 2 <= len(normalized_code) <= 5 or " " in normalized_code:
             raise ValueError(
-                "Код валюты должен содержать "
-                "от 2 до 5 символов без пробелов"
+                "Код валюты должен содержать от 2 до 5 символов без пробелов"
             )
 
         self.name = name.strip()
@@ -69,21 +56,13 @@ class FiatCurrency(Currency):
             )
             or not issuing_country.strip()
         ):
-            raise ValueError(
-                "Страна или зона эмиссии "
-                "не может быть пустой"
-            )
+            raise ValueError("Страна или зона эмиссии не может быть пустой")
 
-        self.issuing_country = (
-            issuing_country.strip()
-        )
+        self.issuing_country = issuing_country.strip()
 
     def get_display_info(self) -> str:
         """Возвращает описание фиатной валюты."""
-        return (
-            f"[FIAT] {self.code} — {self.name} "
-            f"(Issuing: {self.issuing_country})"
-        )
+        return f"[FIAT] {self.code} — {self.name} (Issuing: {self.issuing_country})"
 
 
 class CryptoCurrency(Currency):
@@ -108,47 +87,27 @@ class CryptoCurrency(Currency):
             )
             or not algorithm.strip()
         ):
-            raise ValueError(
-                "Алгоритм криптовалюты "
-                "не может быть пустым"
-            )
+            raise ValueError("Алгоритм криптовалюты не может быть пустым")
 
-        if (
-            not isinstance(
-                market_cap,
-                (int, float),
-            )
-            or isinstance(
-                market_cap,
-                bool,
-            )
+        if not isinstance(
+            market_cap,
+            (int, float),
+        ) or isinstance(
+            market_cap,
+            bool,
         ):
+            raise ValueError("Капитализация должна быть числом")
+
+        numeric_market_cap = float(market_cap)
+
+        if not isfinite(numeric_market_cap) or numeric_market_cap < 0:
             raise ValueError(
-                "Капитализация должна быть числом"
+                "Капитализация должна быть неотрицательным конечным числом"
             )
 
-        numeric_market_cap = float(
-            market_cap
-        )
+        self.algorithm = algorithm.strip()
 
-        if (
-            not isfinite(
-                numeric_market_cap
-            )
-            or numeric_market_cap < 0
-        ):
-            raise ValueError(
-                "Капитализация должна быть "
-                "неотрицательным конечным числом"
-            )
-
-        self.algorithm = (
-            algorithm.strip()
-        )
-
-        self.market_cap = (
-            numeric_market_cap
-        )
+        self.market_cap = numeric_market_cap
 
     def get_display_info(self) -> str:
         """Возвращает описание криптовалюты."""
@@ -206,21 +165,13 @@ def get_currency(
 ) -> Currency:
     """Возвращает валюту из реестра по коду."""
     if not isinstance(code, str):
-        raise CurrencyNotFoundError(
-            str(code)
-        )
+        raise CurrencyNotFoundError(str(code))
 
-    normalized_code = (
-        code.strip().upper()
-    )
+    normalized_code = code.strip().upper()
 
-    currency = CURRENCY_REGISTRY.get(
-        normalized_code
-    )
+    currency = CURRENCY_REGISTRY.get(normalized_code)
 
     if currency is None:
-        raise CurrencyNotFoundError(
-            normalized_code
-        )
+        raise CurrencyNotFoundError(normalized_code)
 
     return currency

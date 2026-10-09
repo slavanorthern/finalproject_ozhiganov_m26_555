@@ -18,14 +18,9 @@ def run_scheduler(
         or isinstance(interval_seconds, bool)
         or interval_seconds <= 0
     ):
-        raise ValueError(
-            "Интервал обновления должен быть "
-            "положительным целым числом"
-        )
+        raise ValueError("Интервал обновления должен быть положительным целым числом")
 
-    logger = logging.getLogger(
-        "valutatrade"
-    )
+    logger = logging.getLogger("valutatrade")
 
     logger.info(
         "SCHEDULER_START interval=%s source=%s",
@@ -35,15 +30,10 @@ def run_scheduler(
 
     while True:
         try:
-            result = updater.run_update(
-                source=source
-            )
+            result = updater.run_update(source=source)
 
             logger.info(
-                "SCHEDULER_UPDATE "
-                "count=%s "
-                "last_refresh=%s "
-                "result=OK",
+                "SCHEDULER_UPDATE count=%s last_refresh=%s result=OK",
                 result["updated_count"],
                 result["last_refresh"],
             )
@@ -63,16 +53,10 @@ def run_scheduler(
 
         except ApiRequestError as error:
             logger.error(
-                "SCHEDULER_UPDATE "
-                "result=ERROR error=%s",
+                "SCHEDULER_UPDATE result=ERROR error=%s",
                 error,
             )
 
-            print(
-                f"Ошибка автоматического обновления: "
-                f"{error}"
-            )
+            print(f"Ошибка автоматического обновления: {error}")
 
-        time.sleep(
-            interval_seconds
-        )
+        time.sleep(interval_seconds)

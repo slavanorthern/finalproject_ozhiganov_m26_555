@@ -27,14 +27,9 @@ class SettingsLoader:
         if self._initialized:
             return
 
-        self.project_root = Path(
-            __file__
-        ).resolve().parents[2]
+        self.project_root = Path(__file__).resolve().parents[2]
 
-        self.pyproject_file = (
-            self.project_root
-            / "pyproject.toml"
-        )
+        self.pyproject_file = self.project_root / "pyproject.toml"
 
         self._settings: dict[str, Any] = {}
 
@@ -46,42 +41,19 @@ class SettingsLoader:
         """Перезагружает настройки из pyproject.toml."""
         config = self._load_pyproject_config()
 
-        data_dir = (
-            self.project_root
-            / "data"
-        )
+        data_dir = self.project_root / "data"
 
-        logs_dir = (
-            self.project_root
-            / "logs"
-        )
+        logs_dir = self.project_root / "logs"
 
         self._settings = {
-            "PROJECT_ROOT": (
-                self.project_root
-            ),
+            "PROJECT_ROOT": (self.project_root),
             "DATA_DIR": data_dir,
-            "USERS_FILE": (
-                data_dir
-                / "users.json"
-            ),
-            "PORTFOLIOS_FILE": (
-                data_dir
-                / "portfolios.json"
-            ),
-            "RATES_FILE": (
-                data_dir
-                / "rates.json"
-            ),
-            "HISTORY_FILE": (
-                data_dir
-                / "exchange_rates.json"
-            ),
+            "USERS_FILE": (data_dir / "users.json"),
+            "PORTFOLIOS_FILE": (data_dir / "portfolios.json"),
+            "RATES_FILE": (data_dir / "rates.json"),
+            "HISTORY_FILE": (data_dir / "exchange_rates.json"),
             "LOG_DIR": logs_dir,
-            "LOG_FILE": (
-                logs_dir
-                / "actions.log"
-            ),
+            "LOG_FILE": (logs_dir / "actions.log"),
             "RATES_TTL_SECONDS": (
                 config.get(
                     "rates_ttl_seconds",
@@ -103,11 +75,7 @@ class SettingsLoader:
             "LOG_FORMAT": (
                 config.get(
                     "log_format",
-                    (
-                        "%(levelname)s "
-                        "%(asctime)s "
-                        "%(message)s"
-                    ),
+                    ("%(levelname)s %(asctime)s %(message)s"),
                 )
             ),
         }

@@ -10,9 +10,7 @@ def setup_logging() -> logging.Logger:
     """Настраивает файловое логирование с ротацией."""
     settings = SettingsLoader()
 
-    logger = logging.getLogger(
-        "valutatrade"
-    )
+    logger = logging.getLogger("valutatrade")
 
     log_level_name = str(
         settings.get(
@@ -27,9 +25,7 @@ def setup_logging() -> logging.Logger:
         logging.INFO,
     )
 
-    logger.setLevel(
-        log_level
-    )
+    logger.setLevel(log_level)
 
     # Не передаем сообщения родительскому logger,
     # чтобы записи не дублировались.
@@ -40,9 +36,7 @@ def setup_logging() -> logging.Logger:
     if logger.handlers:
         return logger
 
-    log_file = settings.get(
-        "LOG_FILE"
-    )
+    log_file = settings.get("LOG_FILE")
 
     log_file.parent.mkdir(
         parents=True,
@@ -56,17 +50,11 @@ def setup_logging() -> logging.Logger:
         encoding="utf-8",
     )
 
-    handler.setLevel(
-        log_level
-    )
+    handler.setLevel(log_level)
 
     log_format = settings.get(
         "LOG_FORMAT",
-        (
-            "%(levelname)s "
-            "%(asctime)s "
-            "%(message)s"
-        ),
+        ("%(levelname)s %(asctime)s %(message)s"),
     )
 
     formatter = logging.Formatter(
@@ -74,12 +62,8 @@ def setup_logging() -> logging.Logger:
         datefmt="%Y-%m-%dT%H:%M:%S",
     )
 
-    handler.setFormatter(
-        formatter
-    )
+    handler.setFormatter(formatter)
 
-    logger.addHandler(
-        handler
-    )
+    logger.addHandler(handler)
 
     return logger

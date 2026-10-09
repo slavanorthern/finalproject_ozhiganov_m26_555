@@ -36,9 +36,7 @@ class RatesStorage:
             exist_ok=True,
         )
 
-        temp_path = file_path.with_suffix(
-            file_path.suffix + ".tmp"
-        )
+        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
 
         with temp_path.open(
             "w",
@@ -73,9 +71,7 @@ class RatesStorage:
         )
 
         if parsed.tzinfo is None:
-            parsed = parsed.replace(
-                tzinfo=UTC
-            )
+            parsed = parsed.replace(tzinfo=UTC)
 
         return parsed
 
@@ -92,20 +88,13 @@ class RatesStorage:
         )
 
         if parsed.tzinfo is None:
-            parsed = parsed.replace(
-                tzinfo=UTC
-            )
+            parsed = parsed.replace(tzinfo=UTC)
 
-        parsed = parsed.astimezone(
-            UTC
-        )
+        parsed = parsed.astimezone(UTC)
 
-        return (
-            parsed.isoformat()
-            .replace(
-                "+00:00",
-                "Z",
-            )
+        return parsed.isoformat().replace(
+            "+00:00",
+            "Z",
         )
 
     def save_current_rates(
@@ -129,59 +118,33 @@ class RatesStorage:
         )
 
         for pair, new_data in rates.items():
-            old_data = current_pairs.get(
-                pair
-            )
+            old_data = current_pairs.get(pair)
 
             if old_data is None:
-                current_pairs[pair] = (
-                    new_data
-                )
+                current_pairs[pair] = new_data
                 continue
 
-            old_time = self._parse_timestamp(
-                old_data.get(
-                    "updated_at"
-                )
-            )
+            old_time = self._parse_timestamp(old_data.get("updated_at"))
 
-            new_time = self._parse_timestamp(
-                new_data.get(
-                    "updated_at"
-                )
-            )
+            new_time = self._parse_timestamp(new_data.get("updated_at"))
 
             if old_time is None:
-                current_pairs[pair] = (
-                    new_data
-                )
+                current_pairs[pair] = new_data
                 continue
 
             if new_time is None:
                 continue
 
             if new_time >= old_time:
-                current_pairs[pair] = (
-                    new_data
-                )
+                current_pairs[pair] = new_data
 
-        normalized_refresh = (
-            self._to_utc_iso(
-                last_refresh
-            )
-        )
+        normalized_refresh = self._to_utc_iso(last_refresh)
 
         for pair_data in current_pairs.values():
-            updated_at = pair_data.get(
-                "updated_at"
-            )
+            updated_at = pair_data.get("updated_at")
 
             if updated_at:
-                pair_data["updated_at"] = (
-                    self._to_utc_iso(
-                        updated_at
-                    )
-                )
+                pair_data["updated_at"] = self._to_utc_iso(updated_at)
 
         result = {
             "pairs": current_pairs,
@@ -220,30 +183,18 @@ class RatesStorage:
         }
 
         for pair, data in rates.items():
-            from_currency, to_currency = (
-                pair.split(
-                    "_",
-                    1,
-                )
+            from_currency, to_currency = pair.split(
+                "_",
+                1,
             )
 
-            from_currency = (
-                from_currency.upper()
-            )
+            from_currency = from_currency.upper()
 
-            to_currency = (
-                to_currency.upper()
-            )
+            to_currency = to_currency.upper()
 
-            timestamp = self._to_utc_iso(
-                data["updated_at"]
-            )
+            timestamp = self._to_utc_iso(data["updated_at"])
 
-            record_id = (
-                f"{from_currency}_"
-                f"{to_currency}_"
-                f"{timestamp}"
-            )
+            record_id = f"{from_currency}_{to_currency}_{timestamp}"
 
             if record_id in existing_ids:
                 continue
@@ -251,25 +202,15 @@ class RatesStorage:
             history.append(
                 {
                     "id": record_id,
-                    "from_currency": (
-                        from_currency
-                    ),
-                    "to_currency": (
-                        to_currency
-                    ),
-                    "rate": float(
-                        data["rate"]
-                    ),
+                    "from_currency": (from_currency),
+                    "to_currency": (to_currency),
+                    "rate": float(data["rate"]),
                     "timestamp": timestamp,
-                    "source": data[
-                        "source"
-                    ],
+                    "source": data["source"],
                 }
             )
 
-            existing_ids.add(
-                record_id
-            )
+            existing_ids.add(record_id)
 
         self._write_json_atomic(
             file_path,

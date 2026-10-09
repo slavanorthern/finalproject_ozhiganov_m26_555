@@ -20,15 +20,9 @@ def log_action(
             *args: Any,
             **kwargs: Any,
         ) -> Any:
-            logger = logging.getLogger(
-                "valutatrade"
-            )
+            logger = logging.getLogger("valutatrade")
 
-            service = (
-                args[0]
-                if args
-                else None
-            )
+            service = args[0] if args else None
 
             current_user = getattr(
                 service,
@@ -36,17 +30,9 @@ def log_action(
                 None,
             )
 
-            username = (
-                current_user.username
-                if current_user is not None
-                else None
-            )
+            username = current_user.username if current_user is not None else None
 
-            user_id = (
-                current_user.user_id
-                if current_user is not None
-                else None
-            )
+            user_id = current_user.user_id if current_user is not None else None
 
             currency_code = None
             amount = None
@@ -56,16 +42,12 @@ def log_action(
                 "SELL",
             }:
                 if "currency_code" in kwargs:
-                    currency_code = kwargs[
-                        "currency_code"
-                    ]
+                    currency_code = kwargs["currency_code"]
                 elif len(args) >= 2:
                     currency_code = args[1]
 
                 if "amount" in kwargs:
-                    amount = kwargs[
-                        "amount"
-                    ]
+                    amount = kwargs["amount"]
                 elif len(args) >= 3:
                     amount = args[2]
 
@@ -106,13 +88,9 @@ def log_action(
                     result,
                     dict,
                 ):
-                    rate = result.get(
-                        "rate"
-                    )
+                    rate = result.get("rate")
 
-                    base = result.get(
-                        "base"
-                    )
+                    base = result.get("base")
 
                 message = (
                     f"{action} "
@@ -126,13 +104,9 @@ def log_action(
                 )
 
                 if verbose:
-                    message += (
-                        f" details={result!r}"
-                    )
+                    message += f" details={result!r}"
 
-                logger.info(
-                    message
-                )
+                logger.info(message)
 
                 return result
 
@@ -148,12 +122,8 @@ def log_action(
                     user_id,
                     currency_code,
                     amount,
-                    type(
-                        error
-                    ).__name__,
-                    str(
-                        error
-                    ),
+                    type(error).__name__,
+                    str(error),
                 )
 
                 raise

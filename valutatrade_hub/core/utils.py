@@ -9,25 +9,15 @@ def normalize_currency_code(
 ) -> str:
     """Проверяет и нормализует код валюты."""
     if not isinstance(code, str):
-        raise ValueError(
-            "Код валюты должен быть строкой"
-        )
+        raise ValueError("Код валюты должен быть строкой")
 
     normalized = code.strip().upper()
 
     if not normalized:
-        raise ValueError(
-            "Код валюты не может быть пустым"
-        )
+        raise ValueError("Код валюты не может быть пустым")
 
-    if (
-        not 2 <= len(normalized) <= 5
-        or " " in normalized
-    ):
-        raise ValueError(
-            "Код валюты должен содержать "
-            "от 2 до 5 символов без пробелов"
-        )
+    if not 2 <= len(normalized) <= 5 or " " in normalized:
+        raise ValueError("Код валюты должен содержать от 2 до 5 символов без пробелов")
 
     return normalized
 
@@ -36,31 +26,19 @@ def validate_amount(
     amount: float,
 ) -> float:
     """Проверяет положительную конечную сумму."""
-    if (
-        not isinstance(
-            amount,
-            (int, float),
-        )
-        or isinstance(
-            amount,
-            bool,
-        )
+    if not isinstance(
+        amount,
+        (int, float),
+    ) or isinstance(
+        amount,
+        bool,
     ):
-        raise ValueError(
-            "'amount' должен быть "
-            "положительным числом"
-        )
+        raise ValueError("'amount' должен быть положительным числом")
 
     value = float(amount)
 
-    if (
-        not isfinite(value)
-        or value <= 0
-    ):
-        raise ValueError(
-            "'amount' должен быть "
-            "положительным числом"
-        )
+    if not isfinite(value) or value <= 0:
+        raise ValueError("'amount' должен быть положительным числом")
 
     return value
 
@@ -75,9 +53,7 @@ def parse_iso_datetime(
 ) -> datetime:
     """Преобразует ISO-строку в datetime."""
     if not isinstance(value, str):
-        raise ValueError(
-            "Дата должна быть строкой"
-        )
+        raise ValueError("Дата должна быть строкой")
 
     return datetime.fromisoformat(
         value.replace(

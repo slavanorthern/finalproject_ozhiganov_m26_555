@@ -1,4 +1,4 @@
-"""Конфигурация Parser Service."""
+"""Конфигурация источников валютных курсов."""
 
 import os
 from dataclasses import dataclass, field
@@ -6,14 +6,18 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from valutatrade_hub.infra.settings import SettingsLoader
 
+PROJECT_ROOT = SettingsLoader().get("PROJECT_ROOT")
+
+# API-ключ загружается из окружения или локального .env.
+load_dotenv(Path.cwd() / ".env")
 load_dotenv(PROJECT_ROOT / ".env")
 
 
 @dataclass(frozen=True)
 class ParserConfig:
-    """Настройки API и хранения валютных курсов."""
+    """Параметры API, отслеживаемых валют и путей к JSON."""
 
     exchangerate_api_key: str | None = field(
         default_factory=lambda: os.getenv("EXCHANGERATE_API_KEY")
@@ -51,7 +55,7 @@ class ParserConfig:
 
     @property
     def rates_file_path(self) -> Path:
-        """Возвращает путь к кешу актуальных курсов."""
+        """Возвращает путь к кешу курсов."""
         return self.project_root / "data" / "rates.json"
 
     @property

@@ -1,12 +1,10 @@
 """Вспомогательные функции валидации и работы со временем."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from math import isfinite
 
 
-def normalize_currency_code(
-    code: str,
-) -> str:
+def normalize_currency_code(code: str) -> str:
     """Проверяет и нормализует код валюты."""
     if not isinstance(code, str):
         raise ValueError("Код валюты должен быть строкой")
@@ -22,17 +20,9 @@ def normalize_currency_code(
     return normalized
 
 
-def validate_amount(
-    amount: float,
-) -> float:
+def validate_amount(amount: float) -> float:
     """Проверяет положительную конечную сумму."""
-    if not isinstance(
-        amount,
-        (int, float),
-    ) or isinstance(
-        amount,
-        bool,
-    ):
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)):
         raise ValueError("'amount' должен быть положительным числом")
 
     value = float(amount)
@@ -45,19 +35,12 @@ def validate_amount(
 
 def utc_now_iso() -> str:
     """Возвращает текущее время UTC в ISO-формате."""
-    return datetime.now().astimezone().isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def parse_iso_datetime(
-    value: str,
-) -> datetime:
+def parse_iso_datetime(value: str) -> datetime:
     """Преобразует ISO-строку в datetime."""
     if not isinstance(value, str):
         raise ValueError("Дата должна быть строкой")
 
-    return datetime.fromisoformat(
-        value.replace(
-            "Z",
-            "+00:00",
-        )
-    )
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))

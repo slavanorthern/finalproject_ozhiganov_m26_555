@@ -1,7 +1,7 @@
 """Клиенты внешних API для получения валютных курсов."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from math import isfinite
 
 import requests
 
@@ -9,14 +9,66 @@ from valutatrade_hub.core.exceptions import ApiRequestError
 from valutatrade_hub.parser_service.config import ParserConfig
 
 
+def _validate_rate(value: object, source: str, code: str) -> float:
+    """Проверяет, что курс является положительным конечным числом."""
+    if isinstance(value, bool):
+        raise ApiRequestError(f"{source}: некорректный курс для {code}")
+
+    try:
+        rate = float(value)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ApiRequestError(f"{source}: некорректный курс для {code}") from error
+
+    if not isfinite(rate) or rate <= 0:
+        raise ApiRequestError(f"{source}: некорректный курс для {code}")
+
+    return rate
+
+
+def _parse_json(response: requests.Response, source: str) -> dict:
+    """Проверяет формат JSON-ответа."""
+    try:
+        data = response.json()
+    except ValueError as error:
+        raise ApiRequestError(f"{source}: сервер вернул некорректный JSON") from error
+
+    if not isinstance(data, dict):
+        raise ApiRequestError(f"{source}: ожидался JSON-объект")
+
+    return data
+
+
+def _request(
+    url: str,
+    source: str,
+    timeout: int,
+    params: dict[str, str] | None = None,
+) -> requests.Response:
+    """Выполняет запрос и безопасно обрабатывает сетевые ошибки."""
+    try:
+        return requests.get(
+            url,
+            params=params,
+            timeout=timeout,
+        )
+    except requests.exceptions.Timeout as error:
+        raise ApiRequestError(f"{source}: превышено время ожидания ответа") from error
+    except requests.exceptions.ConnectionError as error:
+        raise ApiRequestError(f"{source}: ошибка подключения к сети") from error
+    except requests.exceptions.RequestException as error:
+        # Не включаем URL запроса в текст ошибки:
+        # ExchangeRate-API содержит ключ непосредственно в URL.
+        raise ApiRequestError(f"{source}: ошибка HTTP-запроса") from error
+
+
 class BaseApiClient(ABC):
-    """Базовый интерфейс клиента внешнего API."""
+    """Абстрактный интерфейс клиента внешнего API."""
 
     source_name: str
 
     @abstractmethod
     def fetch_rates(self) -> dict[str, float]:
-        """Возвращает курсы в формате PAIR -> rate."""
+        """Возвращает валютные пары и их курсы."""
 
 
 class CoinGeckoClient(BaseApiClient):
@@ -24,99 +76,57 @@ class CoinGeckoClient(BaseApiClient):
 
     source_name = "CoinGecko"
 
-    def __init__(
-        self,
-        config: ParserConfig,
-    ) -> None:
+    def __init__(self, config: ParserConfig) -> None:
         self.config = config
 
     def fetch_rates(self) -> dict[str, float]:
-        """Получает криптовалютные курсы к USD."""
+        """Загружает криптовалютные курсы к базовой валюте."""
         ids = [
             self.config.crypto_id_map[code] for code in self.config.crypto_currencies
         ]
 
         params = {
             "ids": ",".join(ids),
-            "vs_currencies": (self.config.base_currency.lower()),
+            "vs_currencies": self.config.base_currency.lower(),
         }
 
-        try:
-            response = requests.get(
-                self.config.coingecko_url,
-                params=params,
-                timeout=self.config.request_timeout,
-            )
-
-        except requests.exceptions.Timeout as error:
-            raise ApiRequestError(
-                "CoinGecko: превышено время ожидания ответа"
-            ) from error
-
-        except requests.exceptions.ConnectionError as error:
-            raise ApiRequestError("CoinGecko: ошибка подключения к сети") from error
-
-        except requests.exceptions.RequestException as error:
-            raise ApiRequestError("CoinGecko: ошибка HTTP-запроса") from error
-
-        self._check_status(
-            response.status_code,
+        response = _request(
+            url=self.config.coingecko_url,
+            source=self.source_name,
+            timeout=self.config.request_timeout,
+            params=params,
         )
 
-        try:
-            data: dict[str, Any] = response.json()
-
-        except ValueError as error:
-            raise ApiRequestError("CoinGecko вернул некорректный JSON") from error
+        self._check_status(response.status_code)
+        data = _parse_json(response, self.source_name)
 
         result: dict[str, float] = {}
-
         base_key = self.config.base_currency.lower()
 
         for code in self.config.crypto_currencies:
-            raw_id = self.config.crypto_id_map[code]
+            coin_id = self.config.crypto_id_map[code]
+            coin_data = data.get(coin_id)
 
-            coin_data = data.get(raw_id)
-
-            if not isinstance(
-                coin_data,
-                dict,
-            ):
+            if not isinstance(coin_data, dict):
                 raise ApiRequestError(f"CoinGecko: отсутствуют данные для {code}")
 
-            raw_rate = coin_data.get(base_key)
+            rate = _validate_rate(
+                coin_data.get(base_key),
+                self.source_name,
+                code,
+            )
 
-            try:
-                rate = float(raw_rate)
-            except (
-                TypeError,
-                ValueError,
-            ) as error:
-                raise ApiRequestError(
-                    f"CoinGecko: некорректный курс для {code}"
-                ) from error
-
-            if rate <= 0:
-                raise ApiRequestError(f"CoinGecko: некорректный курс для {code}")
-
-            pair = f"{code}_{self.config.base_currency}"
-
-            result[pair] = rate
+            result[f"{code}_{self.config.base_currency}"] = rate
 
         return result
 
     @staticmethod
-    def _check_status(
-        status_code: int,
-    ) -> None:
+    def _check_status(status_code: int) -> None:
         """Проверяет HTTP-статус CoinGecko."""
         if status_code == 429:
             raise ApiRequestError("CoinGecko: превышен лимит запросов")
 
-        if status_code in {
-            401,
-            403,
-        }:
+        if status_code in (401, 403):
             raise ApiRequestError("CoinGecko: доступ к API запрещен")
 
         if status_code >= 500:
@@ -131,14 +141,11 @@ class ExchangeRateApiClient(BaseApiClient):
 
     source_name = "ExchangeRate-API"
 
-    def __init__(
-        self,
-        config: ParserConfig,
-    ) -> None:
+    def __init__(self, config: ParserConfig) -> None:
         self.config = config
 
     def fetch_rates(self) -> dict[str, float]:
-        """Получает фиатные курсы и приводит их к *_USD."""
+        """Загружает фиатные курсы и приводит их к формату *_USD."""
         api_key = self.config.exchangerate_api_key
 
         if not api_key:
@@ -146,105 +153,70 @@ class ExchangeRateApiClient(BaseApiClient):
 
         url = (
             f"{self.config.exchangerate_api_url}/"
-            f"{api_key}/latest/"
-            f"{self.config.base_currency}"
+            f"{api_key}/latest/{self.config.base_currency}"
         )
 
-        try:
-            response = requests.get(
-                url,
-                timeout=self.config.request_timeout,
-            )
-
-        except requests.exceptions.Timeout as error:
-            raise ApiRequestError(
-                "ExchangeRate-API: превышено время ожидания ответа"
-            ) from error
-
-        except requests.exceptions.ConnectionError as error:
-            raise ApiRequestError(
-                "ExchangeRate-API: ошибка подключения к сети"
-            ) from error
-
-        except requests.exceptions.RequestException as error:
-            # Не вставляем str(error), так как он может
-            # содержать URL вместе с API-ключом.
-            raise ApiRequestError("ExchangeRate-API: ошибка HTTP-запроса") from error
+        response = _request(
+            url=url,
+            source=self.source_name,
+            timeout=self.config.request_timeout,
+        )
 
         self._check_status(response.status_code)
-
-        try:
-            data: dict[str, Any] = response.json()
-
-        except ValueError as error:
-            raise ApiRequestError(
-                "ExchangeRate-API вернул некорректный JSON"
-            ) from error
+        data = _parse_json(response, self.source_name)
 
         if data.get("result") == "error":
-            error_type = data.get(
-                "error-type",
-                "unknown-error",
-            )
+            error_type = data.get("error-type")
 
-            safe_messages = {
-                "unsupported-code": ("неподдерживаемый код валюты"),
-                "malformed-request": ("некорректный запрос"),
-                "invalid-key": ("неверный API-ключ"),
-                "inactive-account": ("аккаунт API неактивен"),
-                "quota-reached": ("исчерпан лимит запросов"),
+            messages = {
+                "unsupported-code": "неподдерживаемый код валюты",
+                "malformed-request": "некорректный запрос",
+                "invalid-key": "неверный API-ключ",
+                "inactive-account": "аккаунт API неактивен",
+                "quota-reached": "исчерпан лимит запросов",
             }
 
-            message = safe_messages.get(
+            message = messages.get(
                 error_type,
                 "ошибка внешнего API",
             )
 
             raise ApiRequestError(f"ExchangeRate-API: {message}")
 
-        raw_rates = data.get("conversion_rates") or data.get("rates")
+        raw_rates = data.get("conversion_rates")
 
-        if not isinstance(
-            raw_rates,
-            dict,
-        ):
+        if raw_rates is None:
+            raw_rates = data.get("rates")
+
+        if not isinstance(raw_rates, dict):
             raise ApiRequestError("ExchangeRate-API: в ответе отсутствуют курсы")
 
         result: dict[str, float] = {}
 
         for code in self.config.fiat_currencies:
-            raw_rate = raw_rates.get(code)
+            usd_to_currency = _validate_rate(
+                raw_rates.get(code),
+                self.source_name,
+                code,
+            )
 
-            try:
-                usd_to_currency = float(raw_rate)
-            except (
-                TypeError,
-                ValueError,
-            ) as error:
+            # API возвращает количество валюты за 1 USD.
+            # Для EUR_USD нужен обратный курс.
+            currency_to_usd = 1.0 / usd_to_currency
+
+            if not isfinite(currency_to_usd) or currency_to_usd <= 0:
                 raise ApiRequestError(
-                    f"ExchangeRate-API: некорректный курс для {code}"
-                ) from error
+                    f"ExchangeRate-API: некорректный обратный курс для {code}"
+                )
 
-            if usd_to_currency <= 0:
-                raise ApiRequestError(f"ExchangeRate-API: некорректный курс для {code}")
-
-            currency_to_usd = 1 / usd_to_currency
-
-            pair = f"{code}_{self.config.base_currency}"
-
-            result[pair] = currency_to_usd
+            result[f"{code}_{self.config.base_currency}"] = currency_to_usd
 
         return result
 
     @staticmethod
-    def _check_status(
-        status_code: int,
-    ) -> None:
+    def _check_status(status_code: int) -> None:
         """Проверяет HTTP-статус ExchangeRate-API."""
-        if status_code in {
-            401,
-            403,
-        }:
+        if status_code in (401, 403):
             raise ApiRequestError(
                 "ExchangeRate-API: неверный API-ключ или доступ запрещен"
             )

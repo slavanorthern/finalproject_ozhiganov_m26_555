@@ -10,86 +10,63 @@ def log_action(
     action: str,
     verbose: bool = False,
 ):
-    """Логирует успешное выполнение и ошибки доменной операции."""
+    """Логирует успешные операции и исключения."""
 
     def decorator(
         func: Callable[..., Any],
     ) -> Callable[..., Any]:
         @functools.wraps(func)
-        def wrapper(
-            *args: Any,
-            **kwargs: Any,
-        ) -> Any:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             logger = logging.getLogger("valutatrade")
-
             service = args[0] if args else None
 
-            current_user = getattr(
-                service,
-                "current_user",
-                None,
-            )
-
+            current_user = getattr(service, "current_user", None)
             username = current_user.username if current_user is not None else None
-
             user_id = current_user.user_id if current_user is not None else None
 
             currency_code = None
             amount = None
 
-            if action in {
-                "BUY",
-                "SELL",
-            }:
-                if "currency_code" in kwargs:
-                    currency_code = kwargs["currency_code"]
-                elif len(args) >= 2:
-                    currency_code = args[1]
+            # Для регистрации и входа фиксируем именно
+            # запрошенное имя, даже если операция завершится ошибкой.
+            if action in {"REGISTER", "LOGIN"}:
+                username = (
+                    kwargs.get("username")
+                    if "username" in kwargs
+                    else args[1]
+                    if len(args) > 1
+                    else None
+                )
+                user_id = None
 
-                if "amount" in kwargs:
-                    amount = kwargs["amount"]
-                elif len(args) >= 3:
-                    amount = args[2]
-
-            try:
-                result = func(
-                    *args,
-                    **kwargs,
+            if action in {"BUY", "SELL"}:
+                currency_code = (
+                    kwargs.get("currency_code")
+                    if "currency_code" in kwargs
+                    else args[1]
+                    if len(args) > 1
+                    else None
+                )
+                amount = (
+                    kwargs.get("amount")
+                    if "amount" in kwargs
+                    else args[2]
+                    if len(args) > 2
+                    else None
                 )
 
-                # После LOGIN/REGISTER можем получить
-                # корректного пользователя из результата.
-                if action in {
-                    "LOGIN",
-                    "REGISTER",
-                }:
-                    result_username = getattr(
-                        result,
-                        "username",
-                        None,
-                    )
+            try:
+                result = func(*args, **kwargs)
 
-                    result_user_id = getattr(
-                        result,
-                        "user_id",
-                        None,
-                    )
-
-                    if result_username is not None:
-                        username = result_username
-
-                    if result_user_id is not None:
-                        user_id = result_user_id
+                if action in {"REGISTER", "LOGIN"}:
+                    username = getattr(result, "username", username)
+                    user_id = getattr(result, "user_id", user_id)
 
                 rate = None
                 base = None
 
-                if isinstance(
-                    result,
-                    dict,
-                ):
+                if isinstance(result, dict):
                     rate = result.get("rate")
-
                     base = result.get("base")
 
                 message = (
@@ -107,16 +84,13 @@ def log_action(
                     message += f" details={result!r}"
 
                 logger.info(message)
-
                 return result
 
             except Exception as error:
                 logger.exception(
                     "%s user=%r user_id=%r "
                     "currency=%r amount=%r "
-                    "result=ERROR "
-                    "error_type=%s "
-                    "error_message=%s",
+                    "result=ERROR error_type=%s error_message=%s",
                     action,
                     username,
                     user_id,
@@ -125,7 +99,6 @@ def log_action(
                     type(error).__name__,
                     str(error),
                 )
-
                 raise
 
         return wrapper

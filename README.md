@@ -1,664 +1,199 @@
+
 # ValutaTrade Hub
 
-ValutaTrade Hub — консольное Python-приложение для отслеживания курсов
-фиатных и криптовалют и симуляции валютной торговли.
-
-Проект реализован как Python-пакет с разделением на Core Service,
-Parser Service, инфраструктурный слой и CLI.
+Консольное приложение на Python для отслеживания курсов фиатных и криптовалют и симуляции торговли с виртуальным балансом. Проект разделен на Core Service, Parser Service, инфраструктуру и CLI.
 
 ## Возможности
 
-Приложение позволяет:
+- Регистрация и авторизация пользователей с индивидуальной солью и SHA-256 для хранения паролей.
+- Отдельные кошельки и портфели пользователей, пополнение виртуального USD-баланса.
+- Покупка и продажа валют за USD с проверкой средств.
+- Прямые, обратные и кросс-курсы через USD; оценка портфеля в выбранной валюте.
+- Получение данных через CoinGecko и ExchangeRate-API.
+- Кеш котировок, TTL, история обновлений, автоматический планировщик и логирование операций.
+- JSON-хранилище с атомарной записью.
 
-- регистрировать пользователей;
-- выполнять авторизацию;
-- вести индивидуальный валютный портфель;
-- пополнять виртуальный USD-баланс;
-- покупать и продавать валюты;
-- получать текущие курсы валют;
-- рассчитывать кросс-курсы через USD;
-- оценивать портфель в разных базовых валютах;
-- загружать реальные курсы из внешних API;
-- хранить локальный кеш актуальных курсов;
-- сохранять историю изменения курсов;
-- контролировать свежесть данных через TTL;
-- автоматически обновлять курсы по расписанию;
-- логировать основные операции и ошибки.
+Поддерживаемые валюты: **USD, EUR, GBP, RUB, BTC, ETH, SOL**. Расчетная валюта для торговых операций — USD.
 
-## Поддерживаемые валюты
-
-Фиатные валюты:
-
-- USD — US Dollar
-- EUR — Euro
-- GBP — Pound Sterling
-- RUB — Russian Ruble
-
-Криптовалюты:
-
-- BTC — Bitcoin
-- ETH — Ethereum
-- SOL — Solana
-
-## Источники курсов
-
-Для получения курсов используются два внешних API.
-
-### CoinGecko
-
-Используется для криптовалют:
-
-- BTC
-- ETH
-- SOL
-
-### ExchangeRate-API
-
-Используется для фиатных валют:
-
-- EUR
-- GBP
-- RUB
-
-Внутренней базовой валютой приложения является USD.
-
-## Структура проекта
+## Структура
 
 ```text
 finalproject_ozhiganov_m26_555/
-│
-├── data/
-│   ├── users.json
-│   ├── portfolios.json
-│   ├── rates.json
-│   └── exchange_rates.json
-│
+├── data/                      # JSON-данные при запуске из репозитория
 ├── valutatrade_hub/
-│   ├── __init__.py
-│   ├── logging_config.py
-│   ├── decorators.py
-│   │
+│   ├── cli/
+│   │   └── interface.py       # Команды и вывод
 │   ├── core/
-│   │   ├── __init__.py
-│   │   ├── currencies.py
+│   │   ├── currencies.py      # Иерархия и реестр валют
 │   │   ├── exceptions.py
-│   │   ├── models.py
-│   │   ├── usecases.py
+│   │   ├── models.py          # User, Wallet, Portfolio
+│   │   ├── rates.py           # Единая формула конвертации
+│   │   ├── rate_views.py      # Подготовка списка котировок
+│   │   ├── usecases.py        # TradingService
 │   │   └── utils.py
-│   │
 │   ├── infra/
-│   │   ├── __init__.py
-│   │   ├── settings.py
-│   │   └── database.py
-│   │
+│   │   ├── database.py        # JSON и инициализация хранилища
+│   │   └── settings.py        # SettingsLoader (Singleton)
 │   ├── parser_service/
-│   │   ├── __init__.py
+│   │   ├── api_clients.py     # CoinGecko, ExchangeRate-API
 │   │   ├── config.py
-│   │   ├── api_clients.py
-│   │   ├── updater.py
+│   │   ├── scheduler.py
 │   │   ├── storage.py
-│   │   └── scheduler.py
-│   │
-│   └── cli/
-│       ├── __init__.py
-│       └── interface.py
-│
+│   │   └── updater.py
+│   ├── decorators.py          # @log_action
+│   └── logging_config.py
 ├── main.py
 ├── pyproject.toml
 ├── uv.lock
-├── README.md
-└── .gitignore
+├── .gitignore
+└── README.md
 ```
 
-## Архитектура
+## Требования и установка
 
-Проект разделен на несколько логических слоев.
-
-### Core Service
-
-Содержит основную бизнес-логику:
-
-- класс `User`;
-- класс `Wallet`;
-- класс `Portfolio`;
-- иерархию валют;
-- регистрацию и авторизацию;
-- покупку и продажу валют;
-- получение и расчет валютных курсов;
-- расчет стоимости портфеля;
-- проверку актуальности курсов через TTL.
-
-### Parser Service
-
-Отвечает за получение и сохранение актуальных валютных курсов.
-
-Основные компоненты:
-
-- `BaseApiClient`;
-- `CoinGeckoClient`;
-- `ExchangeRateApiClient`;
-- `RatesUpdater`;
-- `RatesStorage`;
-- планировщик периодического обновления.
-
-Parser Service может работать:
-
-- вручную через `update-rates`;
-- периодически через `schedule-rates`.
-
-### Infrastructure
-
-Инфраструктурный слой содержит:
-
-- `SettingsLoader`;
-- `DatabaseManager`.
-
-Оба компонента реализованы как Singleton.
-
-`SettingsLoader` загружает основные настройки из секции
-`[tool.valutatrade]` файла `pyproject.toml`.
-
-### CLI
-
-`cli/interface.py` является основной точкой взаимодействия пользователя
-с приложением.
-
-CLI не содержит основную бизнес-логику, а вызывает методы Core Service
-и Parser Service.
-
-## Установка
-
-Требуется Python 3.12 или новее.
-
-Клонирование репозитория:
+Требуется **Python 3.12+** и [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/slavanorthern/finalproject_ozhiganov_m26_555.git
 cd finalproject_ozhiganov_m26_555
-```
-
-Установка зависимостей:
-
-```bash
 uv sync
 ```
 
-## Настройка ExchangeRate-API
-
-Для работы с ExchangeRate-API необходимо создать файл `.env`
-в корне проекта.
-
-Пример:
-
-```text
-EXCHANGERATE_API_KEY=your_api_key
-```
-
-Реальный API-ключ не должен сохраняться в Git.
-
-Файл `.env` включен в `.gitignore`.
-
-Для CoinGecko отдельный API-ключ в текущей конфигурации не требуется.
-
-## Запуск приложения
-
-Основной вариант:
+Запуск из репозитория:
 
 ```bash
 uv run python main.py
 ```
 
-Также в `pyproject.toml` зарегистрирован console script:
+Или через точку входа пакета:
 
 ```bash
 uv run valutatrade
 ```
 
-После запуска:
+### Сборка и отдельная установка wheel
 
-```text
-ValutaTrade Hub
-Введите help для списка команд.
->
+```bash
+uv build
 ```
+
+Сборка создает `.whl` и `.tar.gz` в `dist/`. Для установки собранного wheel в отдельное виртуальное окружение на Windows:
+
+```bash
+uv venv ../valutatrade-wheel-test/.venv
+uv pip install --python ../valutatrade-wheel-test/.venv/Scripts/python.exe dist/finalproject_ozhiganov_m26_555-0.1.0-py3-none-any.whl
+../valutatrade-wheel-test/.venv/Scripts/valutatrade.exe
+```
+
+### Где хранятся данные
+
+- При запуске из исходного репозитория — в его каталоге `data/`.
+- При отдельной установке wheel — в пользовательском каталоге `~/.valutatrade_hub/data/`.
+- Каталог можно явно задать переменной окружения `VALUTATRADE_HOME`; тогда файлы окажутся в `$VALUTATRADE_HOME/data/`.
+- Отсутствующие JSON-файлы создаются автоматически при первой инициализации хранилища, существующие файлы не перезаписываются.
+
+Пример для **Git Bash (Windows)**:
+
+```bash
+export VALUTATRADE_HOME="$HOME/valutatrade-data"
+```
+
+Для удаления переопределения в текущем терминале:
+
+```bash
+unset VALUTATRADE_HOME
+```
+
+В каталоге `data/` используются `users.json`, `portfolios.json`, `rates.json`, `exchange_rates.json`.
+
+## API-ключ
+
+Для фиатных курсов необходим ключ ExchangeRate-API. Создайте `.env` в корне проекта:
+
+```dotenv
+EXCHANGERATE_API_KEY=your_api_key
+```
+
+При установленном wheel переменную можно передать через окружение либо `.env` в рабочем каталоге. Не добавляйте реальные ключи в Git. CoinGecko используется без API-ключа в текущей конфигурации.
 
 ## Команды CLI
 
-### Справка
-
 ```text
 help
-```
-
-### Регистрация пользователя
-
-```text
 register --username alice --password 1234
-```
-
-Пример результата:
-
-```text
-Пользователь 'alice' зарегистрирован (id=1).
-Войдите: login --username alice --password ****
-```
-
-### Авторизация
-
-```text
 login --username alice --password 1234
-```
-
-Пример:
-
-```text
-Вы вошли как 'alice'
-```
-
-### Просмотр портфеля
-
-```text
 show-portfolio
-```
-
-По умолчанию используется USD.
-
-Можно выбрать другую базовую валюту:
-
-```text
 show-portfolio --base EUR
-```
-
-### Пополнение виртуального USD-баланса
-
-```text
 deposit --amount 10000
-```
-
-Команда используется для пополнения виртуального USD-кошелька
-перед симуляцией торговых операций.
-
-### Покупка валюты
-
-```text
 buy --currency BTC --amount 0.01
-```
-
-Количество покупаемой валюты указывается в единицах самой валюты.
-
-Стоимость покупки рассчитывается по актуальному курсу и списывается
-с USD-кошелька.
-
-### Продажа валюты
-
-```text
 sell --currency BTC --amount 0.005
-```
-
-Проданная валюта списывается с соответствующего кошелька,
-а рассчитанная выручка начисляется на USD-кошелек.
-
-### Получение курса
-
-```text
 get-rate --from BTC --to USD
-```
-
-Приложение выводит:
-
-- прямой курс;
-- обратный курс;
-- время обновления;
-- источник данных.
-
-Поддерживаются также кросс-курсы:
-
-```text
 get-rate --from BTC --to EUR
-```
-
-Если прямой пары нет в кеше, курс рассчитывается через USD.
-
-Например:
-
-```text
-BTC/EUR = BTC/USD / EUR/USD
-```
-
-### Обновление курсов
-
-Обновить данные из всех источников:
-
-```text
 update-rates
-```
-
-Только CoinGecko:
-
-```text
 update-rates --source coingecko
-```
-
-Только ExchangeRate-API:
-
-```text
 update-rates --source exchangerate
-```
-
-### Просмотр кеша курсов
-
-```text
 show-rates
-```
-
-В другой базовой валюте:
-
-```text
 show-rates --base EUR
-```
-
-Для конкретной валюты:
-
-```text
 show-rates --currency BTC
-```
-
-Показать самые дорогие криптовалюты:
-
-```text
 show-rates --top 2
-```
-
-Параметры можно комбинировать:
-
-```text
 show-rates --top 3 --base EUR
-```
-
-### Автоматическое обновление курсов
-
-Запуск со стандартным интервалом 300 секунд:
-
-```text
 schedule-rates
-```
-
-Изменение интервала:
-
-```text
 schedule-rates --interval 60
-```
-
-Обновление только из CoinGecko:
-
-```text
 schedule-rates --interval 60 --source coingecko
+exit
 ```
 
-Для остановки планировщика:
+`register` создает пользователя с пустым портфелем. `deposit` добавляет виртуальные USD, после чего доступны покупки. При продаже средства возвращаются в USD. `get-rate` выводит курс, обратный курс, источник и время обновления.
 
-```text
-Ctrl+C
-```
+Планировщик запускает повторные обновления; для его остановки используйте **Ctrl+C**.
 
-## Пример полного сценария
+## Котировки и TTL
 
-```text
-register --username alice --password 1234
-login --username alice --password 1234
+Parser Service получает котировки BTC, ETH, SOL через CoinGecko, а USD-курсы EUR, GBP, RUB — через ExchangeRate-API. Данные записываются в `data/rates.json`; история изменений — в `data/exchange_rates.json`.
 
-deposit --amount 10000
-
-update-rates
-
-show-rates --top 2
-
-get-rate --from BTC --to USD
-
-buy --currency BTC --amount 0.01
-
-show-portfolio
-
-show-portfolio --base EUR
-
-sell --currency BTC --amount 0.005
-
-show-portfolio
-```
-
-## Кеш и TTL
-
-Core Service получает актуальные курсы из:
-
-```text
-data/rates.json
-```
-
-Для каждой валютной пары сохраняются:
-
-- `rate`;
-- `updated_at`;
-- `source`.
-
-Пример:
+Пример кеша:
 
 ```json
 {
   "pairs": {
     "BTC_USD": {
-      "rate": 83159.0,
-      "updated_at": "2026-10-09T14:39:23.425732Z",
+      "rate": 80000.0,
+      "updated_at": "2026-10-09T14:39:23+00:00",
       "source": "CoinGecko"
+    },
+    "EUR_USD": {
+      "rate": 1.25,
+      "updated_at": "2026-10-09T14:39:24+00:00",
+      "source": "ExchangeRate-API"
     }
   },
-  "last_refresh": "2026-10-09T14:39:28.778891Z"
+  "last_refresh": "2026-10-09T14:39:24+00:00"
 }
 ```
 
-Срок актуальности курса задается в `pyproject.toml`:
-
-```toml
-[tool.valutatrade]
-rates_ttl_seconds = 300
-```
-
-По умолчанию TTL составляет 5 минут.
-
-Если сохраненный курс устарел, Core Service сообщает пользователю
-о необходимости выполнить:
+Кросс-курс через USD рассчитывается, например, по формуле:
 
 ```text
-update-rates
+BTC/EUR = (BTC/USD) / (EUR/USD)
 ```
 
-## История курсов
+Торговые операции и `get-rate` требуют актуальных курсов. По умолчанию TTL составляет **300 секунд**; при истечении срока необходимо выполнить `update-rates`.
 
-Parser Service сохраняет историю измерений в:
+`show-rates` показывает сохраненные курсы и отдельный статус **«актуален» / «устарел»**. Устаревшее значение остается видимым в списке, но не используется для торговли. Для составной котировки показываются объединенные источники и время более старого компонента.
 
-```text
-data/exchange_rates.json
-```
+## Модели и обработка ошибок
 
-Пример записи:
+- `Currency` — абстрактный базовый класс; `FiatCurrency` и `CryptoCurrency` — наследники. Поиск по коду: `get_currency(code)`.
+- `User` — пользователь, пароль хранится как хеш с солью.
+- `Wallet` — баланс конкретной валюты, положительные пополнения и списания.
+- `Portfolio` — кошельки пользователя и расчет общей стоимости, включая кросс-курсы.
+- `TradingService` — регистрация, вход, сделки, курсы и оценка портфеля.
 
-```json
-{
-  "id": "BTC_USD_2026-10-09T14:39:23.425732Z",
-  "from_currency": "BTC",
-  "to_currency": "USD",
-  "rate": 83159.0,
-  "timestamp": "2026-10-09T14:39:23.425732Z",
-  "source": "CoinGecko"
-}
-```
+Обрабатываются неизвестные валюты, недостаток средств, некорректные суммы, отсутствие/устаревание курсов, ошибки сети, HTTP-статусы и некорректные ответы API. Основные пользовательские исключения: `InsufficientFundsError`, `CurrencyNotFoundError`, `ApiRequestError`.
 
-Уникальный идентификатор состоит из:
+## Настройки и логи
 
-```text
-FROM_TO_TIMESTAMP
-```
-
-Это предотвращает повторное добавление одного и того же измерения.
-
-Запись выполняется атомарно:
-
-```text
-временный файл → rename
-```
-
-## Пользователи и пароли
-
-Пользователи сохраняются в:
-
-```text
-data/users.json
-```
-
-Пароли не сохраняются в открытом виде.
-
-Используются:
-
-- индивидуальная случайная соль;
-- SHA-256;
-- проверка хеша при авторизации.
-
-Пример структуры:
-
-```json
-{
-  "user_id": 1,
-  "username": "alice",
-  "hashed_password": "...",
-  "salt": "...",
-  "registration_date": "2026-10-09T12:00:00+00:00"
-}
-```
-
-## Валютная модель
-
-В проекте используется абстрактный класс:
-
-```text
-Currency
-```
-
-И два наследника:
-
-```text
-FiatCurrency
-CryptoCurrency
-```
-
-Пример представления фиатной валюты:
-
-```text
-[FIAT] USD — US Dollar (Issuing: United States)
-```
-
-Пример представления криптовалюты:
-
-```text
-[CRYPTO] BTC — Bitcoin (Algo: SHA-256, MCAP: 1.12e+12)
-```
-
-Получение валюты выполняется через реестр и функцию:
-
-```python
-get_currency(code)
-```
-
-## Обработка ошибок
-
-В проекте используются пользовательские исключения:
-
-- `InsufficientFundsError`;
-- `CurrencyNotFoundError`;
-- `ApiRequestError`.
-
-Приложение обрабатывает:
-
-- неизвестные валюты;
-- недостаток средств;
-- некорректные суммы;
-- ошибки внешнего API;
-- превышение API-лимита;
-- неверный API-ключ;
-- сетевые ошибки;
-- устаревшие курсы;
-- отсутствие требуемого курса.
-
-Пример:
-
-```text
-Недостаточно средств: доступно 0.0050 BTC, требуется 100.0000 BTC
-```
-
-Пример неизвестной валюты:
-
-```text
-Неизвестная валюта 'ABC'
-```
-
-## Логирование
-
-Ключевые доменные операции логируются с помощью декоратора:
-
-```python
-@log_action(...)
-```
-
-Логируются:
-
-- REGISTER;
-- LOGIN;
-- BUY;
-- SELL;
-- получение данных Parser Service;
-- сохранение обновлений;
-- ошибки.
-
-Лог содержит:
-
-- timestamp;
-- action;
-- username;
-- user_id;
-- currency;
-- amount;
-- rate;
-- base;
-- result;
-- тип и текст ошибки при неуспешной операции.
-
-Файл логов:
-
-```text
-logs/actions.log
-```
-
-Используется `RotatingFileHandler`.
-
-По умолчанию:
-
-```text
-maxBytes = 1_000_000
-backupCount = 3
-```
-
-## Singleton
-
-В проекте Singleton используется для:
-
-- `SettingsLoader`;
-- `DatabaseManager`.
-
-`SettingsLoader` обеспечивает единую точку доступа к настройкам.
-
-`DatabaseManager` обеспечивает единый интерфейс работы с JSON-хранилищем.
-
-## Конфигурация
-
-Основные настройки расположены в `pyproject.toml`:
+Настройки приложения находятся в `pyproject.toml`, секция `[tool.valutatrade]`:
 
 ```toml
 [tool.valutatrade]
@@ -668,95 +203,26 @@ log_level = "INFO"
 log_format = "%(levelname)s %(asctime)s %(message)s"
 ```
 
-Настройки Parser Service находятся в:
+`SettingsLoader` и `DatabaseManager` реализованы как Singleton. Параметры источников API определены в `parser_service/config.py`.
 
-```text
-valutatrade_hub/parser_service/config.py
-```
+Декоратор `@log_action` записывает регистрацию, вход, покупку, продажу и ошибки в `logs/actions.log`. Используется `RotatingFileHandler` с ротацией логов. Пароли в логи не записываются.
 
-Там задаются:
-
-- URL API;
-- базовая валюта;
-- список фиатных валют;
-- список криптовалют;
-- `CRYPTO_ID_MAP`;
-- timeout;
-- пути к файлам.
-
-Чувствительный API-ключ загружается из переменной окружения.
-
-## Проверка качества кода
-
-В проекте используется Ruff.
-
-Проверка:
+## Проверка кода
 
 ```bash
 uv run ruff check .
-```
-
-Автоматическое исправление поддерживаемых замечаний:
-
-```bash
-uv run ruff check . --fix
-```
-
-Форматирование:
-
-```bash
-uv run ruff format .
-```
-
-## Сборка
-
-Проект собирается как полноценный Python-пакет:
-
-```bash
+uv run ruff format --check .
 uv build
 ```
 
-После успешной сборки создаются:
+## Демонстрация
 
-```text
-dist/finalproject_ozhiganov_m26_555-0.1.0.tar.gz
-dist/finalproject_ozhiganov_m26_555-0.1.0-py3-none-any.whl
-```
+Запись работы приложения на asciinema: [открыть демо](https://asciinema.org/a/izElmESnGOYObA28).
 
-Каталог `dist/` исключен из Git.
-
-## Демо
-
-Полная демонстрация работы приложения записана с помощью asciinema:
-
-https://asciinema.org/a/izElmESnGOYObA28
-
-В демонстрации показаны:
-
-- регистрация пользователя;
-- авторизация;
-- пополнение виртуального USD-баланса;
-- обновление курсов через Parser Service;
-- просмотр актуальных курсов;
-- получение кросс-курса;
-- покупка BTC;
-- просмотр портфеля;
-- пересчет портфеля в EUR;
-- продажа BTC;
-- ошибка недостатка средств;
-- обработка неизвестной валюты.
+В записи показаны регистрация, авторизация, пополнение виртуального счета, обновление и просмотр курсов, получение кросс-курса, покупка и продажа BTC, оценка портфеля в USD/EUR и обработка ошибок.
 
 ## Технологии
 
-- Python 3.12
-- uv
-- Ruff
-- PrettyTable
-- Requests
-- python-dotenv
-- JSON
-- Git
-- CoinGecko API
-- ExchangeRate-API
-- asciinema
+Python 3.12, uv, Ruff, PrettyTable, Requests, python-dotenv, JSON, Git, CoinGecko API, ExchangeRate-API, asciinema.
+
 
